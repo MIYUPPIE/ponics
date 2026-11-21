@@ -1,0 +1,10 @@
+{
+  "mpc|train|sensor":          {"ph_in_band": 0.99, "ph_severe_h": 1.0, "root_health": 0.99, "ec_low_frac": 0.02},
+  "mpc|unseen|sensor":         {"ph_in_band": 0.97, "ph_severe_h": 6.0, "root_health": 0.99},
+  "gp_mpc|train|sensor":       {"ph_in_band": 0.99, "ph_severe_h": 1.0, "root_health": 0.99, "ec_low_frac": 0.02},
+  "gp_mpc|unseen|sensor":      {"ph_in_band": 0.97, "ph_severe_h": 6.0, "root_health": 0.99},
+  "gp_mpc_tight|train|sensor": {"ph_in_band": 0.99, "ph_severe_h": 1.0, "root_health": 0.99, "ph_rms": 0.08},
+  "pid|train|sensor":          {"ph_in_band": 0.98, "root_health": 0.99},
+  "rule|train|sensor":         {"ph_in_band": 0.98, "root_health": 0.99},
+  "ppo|train|sensor":          {"ph_in_band": 0.98, "root_health": 0.99}
+}

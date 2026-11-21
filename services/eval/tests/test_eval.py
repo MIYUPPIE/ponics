@@ -15,7 +15,7 @@ def fake_log(ph, ec):
     log.ph, log.ec = list(ph), list(ec)
     log.ph_meas, log.ec_meas = list(ph), list(ec)
     log.ab_ml = log.acid_ml = log.base_ml = [0.0] * n
-    log.stress, log.solve_ms = [1.0] * n, [1.0] * n
+    log.stress, log.solve_ms, log.fw = [1.0] * n, [1.0] * n, [150.0] * n
     log.fw_g, log.ledger, log.finished = 150.0, Ledger(), True
     return log
 

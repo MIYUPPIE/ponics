@@ -28,6 +28,7 @@ class EpisodeLog:
     acid_ml: list = field(default_factory=list)
     base_ml: list = field(default_factory=list)
     stress: list = field(default_factory=list)
+    fw: list = field(default_factory=list)  # mean fresh weight per plant, g
     solve_ms: list = field(default_factory=list)
     fw_g: float = 0.0
     root_health: float = 1.0
@@ -37,7 +38,7 @@ class EpisodeLog:
 
     def arrays(self) -> dict:
         return {k: np.asarray(getattr(self, k)) for k in
-                ("t", "ph", "ec", "ph_meas", "ec_meas", "ab_ml", "acid_ml", "base_ml", "stress", "solve_ms")}
+                ("t", "ph", "ec", "ph_meas", "ec_meas", "ab_ml", "acid_ml", "base_ml", "stress", "fw", "solve_ms")}
 
 
 def observe(sys: NftSystem, probes: Probes | None, sp: Setpoints) -> Observation:
@@ -71,6 +72,7 @@ def run_episode(ctrl: Controller, sc: Scenario, sp: Setpoints | None = None) -> 
         log.acid_ml.append(applied.acid_ml)
         log.base_ml.append(applied.base_ml)
         log.stress.append(sys.last_rates.f_stress)
+        log.fw.append(sys.fresh_weight_g())
         log.solve_ms.append(dt_ms)
     log.fw_g = sys.fresh_weight_g()
     log.root_health = sys.crop.root_health

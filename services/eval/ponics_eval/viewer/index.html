@@ -1,0 +1,358 @@
+<title>Ponics Reservoir Replay</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=Archivo:wght@600;700&display=swap">
+<style>
+/* Layout: instrument-panel header, a rack of reservoir cards, then shared timelines and the end-of-cycle table. */
+:root {
+  --bg: #eef2f0; --panel: #ffffff; --ink: #17211d; --muted: #5b6863; --rule: #d3dbd7;
+  --accent: #1f6b4a; --accent-ink: #ffffff; --band: rgba(31,107,74,0.10); --water-edge: #9fb2ab;
+  --ok: #1f7a46; --warn: #b26a00; --bad: #b3261e;
+  --c-rule: #8a6d3b; --c-pid: #c0392b; --c-mpc: #2b6cb0; --c-gp_mpc: #1f8a5b; --c-mpc_tight: #8e44ad; --c-gp_mpc_tight: #d4821a; --c-ppo: #4a4a4a;
+  --f-display: "Archivo", "IBM Plex Sans", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #101614; --panel: #18201d; --ink: #e3ebe7; --muted: #95a39d; --rule: #2b3632;
+  --accent: #5cc08d; --accent-ink: #0c1411; --band: rgba(92,192,141,0.12); --water-edge: #4a5a54;
+  --ok: #5cc08d; --warn: #e0a13a; --bad: #f07067;
+  --c-rule: #c9a46a; --c-pid: #f07067; --c-mpc: #6aa8ec; --c-gp_mpc: #5cc08d; --c-mpc_tight: #c08ae0; --c-gp_mpc_tight: #f0a64a; --c-ppo: #b5b5b5;
+  color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #101614; --panel: #18201d; --ink: #e3ebe7; --muted: #95a39d; --rule: #2b3632;
+  --accent: #5cc08d; --accent-ink: #0c1411; --band: rgba(92,192,141,0.12); --water-edge: #4a5a54;
+  --ok: #5cc08d; --warn: #e0a13a; --bad: #f07067;
+  --c-rule: #c9a46a; --c-pid: #f07067; --c-mpc: #6aa8ec; --c-gp_mpc: #5cc08d; --c-mpc_tight: #c08ae0; --c-gp_mpc_tight: #f0a64a; --c-ppo: #b5b5b5;
+  color-scheme: dark }
+
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.45; }
+.wrap { max-width: 1240px; margin: 0 auto; padding-block: 20px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 18px; }
+h1 { font-family: var(--f-display); font-size: 1.75rem; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+h2 { font-family: var(--f-display); font-size: 1.05rem; margin: 0; }
+.sub { color: var(--muted); margin: 4px 0 0; max-width: 70ch; }
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+
+header.top { display: flex; flex-wrap: wrap; gap: 16px 28px; align-items: end; justify-content: space-between; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { font: inherit; font-size: 0.85rem; border: 0; background: transparent; color: var(--ink); padding: 7px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button:focus-visible, .btn:focus-visible, input[type=range]:focus-visible, .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn { font: inherit; font-weight: 600; border: 0; border-radius: 8px; padding: 8px 16px; background: var(--accent); color: var(--accent-ink); cursor: pointer; min-width: 84px; }
+
+.clock { display: flex; gap: 18px; align-items: baseline; flex-wrap: wrap; }
+.clock .big { font-family: var(--f-mono); font-size: 1.6rem; font-weight: 600; }
+.lights-pill { font-size: 0.8rem; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--rule); background: var(--panel); }
+
+.rack { display: grid; grid-template-columns: repeat(auto-fill, minmax(185px, 1fr)); gap: 12px; }
+.card { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 12px; display: grid; gap: 8px; cursor: pointer; min-width: 0; }
+.card[aria-pressed="true"] { border-color: var(--cc); box-shadow: 0 0 0 1px var(--cc) inset; }
+.card .name { display: flex; align-items: center; gap: 7px; font-weight: 600; font-family: var(--f-mono); font-size: 0.9rem; }
+.card .name i { width: 10px; height: 10px; border-radius: 50%; background: var(--cc); flex: none; }
+.card .desc { color: var(--muted); font-size: 0.78rem; min-height: 2.2em; }
+.tankrow { display: grid; grid-template-columns: 74px 1fr; gap: 10px; align-items: center; }
+.tank { width: 74px; height: 92px; }
+.read { display: grid; gap: 2px; }
+.read .ph { font-family: var(--f-mono); font-size: 1.45rem; font-weight: 600; line-height: 1.1; }
+.read .small { font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); }
+.pill { justify-self: start; font-size: 0.72rem; font-weight: 600; padding: 2px 8px; border-radius: 999px; color: var(--panel); }
+.pill.ok { background: var(--ok); } .pill.warn { background: var(--warn); } .pill.bad { background: var(--bad); }
+.pumps { display: flex; gap: 6px; flex-wrap: wrap; }
+.pump { font-family: var(--f-mono); font-size: 0.7rem; border: 1px solid var(--rule); border-radius: 6px; padding: 2px 6px; color: var(--muted); }
+.pump.on { color: var(--ink); border-color: var(--cc); background: color-mix(in srgb, var(--cc) 14%, transparent); }
+.crop { display: flex; align-items: center; gap: 8px; font-family: var(--f-mono); font-size: 0.78rem; color: var(--muted); }
+.crop svg { width: 34px; height: 34px; flex: none; }
+
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.chart { width: 100%; height: 190px; display: block; }
+.chart.short { height: 150px; }
+.scrub { display: grid; gap: 4px; }
+.scrub input { width: 100%; accent-color: var(--accent); }
+.ticks { display: flex; justify-content: space-between; font-family: var(--f-mono); font-size: 0.7rem; color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; color: var(--muted); }
+.note { color: var(--muted); font-size: 0.82rem; max-width: 80ch; }
+
+.scale { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; color: var(--muted); flex-wrap: wrap; }
+.scale .bar { height: 10px; width: 220px; max-width: 60vw; border-radius: 5px; }
+
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 0.85rem; }
+th, td { text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 500; color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+td { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+td.best { color: var(--ok); font-weight: 600; }
+td.worst { color: var(--bad); }
+.err { color: var(--bad); }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="label">ponics · NFT lettuce · 100 L reservoir · 72 plants · 35-day cycle</div>
+      <h1>Reservoir replay</h1>
+      <p class="sub">Every controller runs the same simulated crop cycle with the same probes, tap water and room. Tanks are tinted by <strong>true</strong> pH on a universal-indicator scale; readouts show what the probe told the controller. Click a reservoir to highlight it in the timelines.</p>
+    </div>
+    <div class="controls">
+      <div class="seg" role="group" aria-label="Scenario">
+        <button id="suite-train" aria-pressed="true">Soft water · 22 °C</button>
+        <button id="suite-unseen" aria-pressed="false">Hard water · 28 °C</button>
+      </div>
+      <button class="btn" id="play">Play</button>
+      <div class="seg" role="group" aria-label="Speed">
+        <button id="sp-6" aria-pressed="false">6 h/s</button>
+        <button id="sp-24" aria-pressed="true">1 d/s</button>
+        <button id="sp-96" aria-pressed="false">4 d/s</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="clock">
+    <div><div class="label">time since transplant</div><div class="big" id="clock">day 0 · 00:00</div></div>
+    <span class="lights-pill" id="lights">lights off</span>
+    <span class="lights-pill" id="event" hidden>half-tank dump + tap refill</span>
+    <div class="scale"><span>pH 4</span><span class="bar" id="scalebar"></span><span>pH 8</span><span>· band 5.5–6.5</span></div>
+  </div>
+
+  <section class="rack" id="rack" aria-label="Reservoirs"></section>
+
+  <section class="panel">
+    <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline">
+      <h2>True pH</h2><div class="legend" id="legend"></div>
+    </div>
+    <canvas class="chart" id="phc" aria-label="pH over 35 days for each controller"></canvas>
+    <h2>True EC (dS/m at 25 °C)</h2>
+    <canvas class="chart short" id="ecc" aria-label="EC over 35 days for each controller"></canvas>
+    <div class="scrub">
+      <input type="range" id="scrub" min="0" max="839" value="0" aria-label="Scrub time">
+      <div class="ticks" id="ticks"></div>
+    </div>
+    <p class="note">Shaded: target band (pH 5.5–6.5, EC 1.6–2.0). Dashed lines: scheduled half-tank dumps, refilled with tap water; every controller gets the same ones. EC above band is salt build-up (Ca, Mg, SO4, Na) that dosing cannot remove.</p>
+  </section>
+
+  <section class="panel">
+    <h2>End of cycle, seed 0</h2>
+    <div class="tablewrap"><table id="tbl"></table></div>
+    <p class="note">One seed per scenario, so read these as an illustration. The 10-seed results with spread are in the repo's <span class="mono">results/latest/summary.md</span>. Severe hours: true pH below 5.0 or above 7.0.</p>
+  </section>
+</div>
+
+<script>
+(() => {
+  const DESC = {
+    rule: "Fixed shots when a reading leaves its dead band",
+    pid: "PI loops, gains from one jar test",
+    mpc: "Linear MPC, move penalty 0.05",
+    gp_mpc: "MPC + learned pH residual, penalty 0.05",
+    mpc_tight: "Linear MPC, aggressive penalty 0.003",
+    gp_mpc_tight: "GP-MPC, aggressive penalty 0.003",
+    ppo: "Model-free PPO policy",
+  };
+  const $ = (id) => document.getElementById(id);
+  const css = (v) => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+  let D = null, suite = "train", h = 0, playing = false, speed = 24, focus = "gp_mpc", last = null;
+
+  // Universal-indicator style colours for pH 4..8
+  const STOPS = [[4.0, [214, 48, 39]], [5.0, [244, 128, 36]], [5.5, [246, 196, 52]], [6.0, [182, 206, 62]], [6.5, [86, 176, 82]], [7.0, [38, 150, 138]], [8.0, [52, 96, 184]]];
+  function phColor(p) {
+    if (p <= STOPS[0][0]) return `rgb(${STOPS[0][1]})`;
+    for (let i = 1; i < STOPS.length; i++) {
+      if (p <= STOPS[i][0]) {
+        const [a, ca] = STOPS[i - 1], [b, cb] = STOPS[i], f = (p - a) / (b - a);
+        return `rgb(${ca.map((c, k) => Math.round(c + f * (cb[k] - c))).join(",")})`;
+      }
+    }
+    return `rgb(${STOPS[STOPS.length - 1][1]})`;
+  }
+  $("scalebar").style.background = `linear-gradient(90deg, ${[4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8].map(phColor).join(",")})`;
+
+  function status(p) {
+    if (p < 5.0 || p > 7.0) return ["bad", p < 5 ? "pH severe low" : "pH severe high"];
+    if (p < 5.5) return ["warn", "pH low"];
+    if (p > 6.5) return ["warn", "pH high"];
+    return ["ok", "in band"];
+  }
+
+  function buildRack() {
+    const rack = $("rack");
+    rack.innerHTML = "";
+    for (const name of D.controllers) {
+      const c = document.createElement("article");
+      c.className = "card"; c.tabIndex = 0; c.id = `card-${name}`;
+      c.style.setProperty("--cc", `var(--c-${name})`);
+      c.setAttribute("aria-pressed", String(name === focus));
+      c.innerHTML = `
+        <div class="name"><i></i>${name}</div>
+        <div class="desc">${DESC[name] || ""}</div>
+        <div class="tankrow">
+          <svg class="tank" viewBox="0 0 74 92" aria-hidden="true">
+            <rect x="3" y="6" width="68" height="83" rx="6" fill="none" stroke="var(--water-edge)" stroke-width="2"/>
+            <rect class="water" x="5" y="16" width="64" height="71" rx="4" fill="#b6ce3e"/>
+            <rect x="52" y="2" width="5" height="54" rx="2" fill="var(--muted)"/>
+            <g class="drops"></g>
+          </svg>
+          <div class="read">
+            <span class="label">true pH</span>
+            <span class="ph">–</span>
+            <span class="small meas">probe –</span>
+            <span class="small ec">EC –</span>
+          </div>
+        </div>
+        <span class="pill ok">in band</span>
+        <div class="pumps"><span class="pump ab">A+B</span><span class="pump acid">acid</span><span class="pump base">base</span></div>
+        <div class="crop"><svg viewBox="-17 -17 34 34" aria-hidden="true"><circle class="head" r="4" fill="var(--c-gp_mpc)"/><circle class="heart" r="2" fill="var(--panel)" opacity="0.35"/></svg><span class="fw">– g</span></div>`;
+      const pick = () => { focus = name; document.querySelectorAll(".card").forEach(e => e.setAttribute("aria-pressed", String(e.id === `card-${name}`))); draw(); };
+      c.addEventListener("click", pick);
+      c.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); pick(); } });
+      rack.appendChild(c);
+    }
+    $("legend").innerHTML = D.controllers.map(n => `<span><span style="display:inline-block;width:14px;height:3px;border-radius:2px;background:var(--c-${n});vertical-align:middle;margin-right:5px"></span>${n}</span>`).join("");
+  }
+
+  function setupCanvas(cv) {
+    const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+    cv.width = Math.max(1, Math.round(r.width * dpr)); cv.height = Math.max(1, Math.round(r.height * dpr));
+    const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return [g, r.width, r.height];
+  }
+
+  function chart(cv, key, lo, hi, band, ticks) {
+    const [g, W, H] = setupCanvas(cv);
+    const L = 38, R = 8, T = 8, B = 18, n = D.hours;
+    const x = i => L + (W - L - R) * i / (n - 1), y = v => T + (H - T - B) * (1 - (Math.min(hi, Math.max(lo, v)) - lo) / (hi - lo));
+    g.clearRect(0, 0, W, H);
+    g.fillStyle = css("--band"); g.fillRect(L, y(band[1]), W - L - R, y(band[0]) - y(band[1]));
+    g.strokeStyle = css("--rule"); g.lineWidth = 1; g.fillStyle = css("--muted"); g.font = `11px ${css("--f-mono")}`;
+    g.textAlign = "right"; g.textBaseline = "middle";
+    for (const t of ticks) { g.beginPath(); g.moveTo(L, y(t)); g.lineTo(W - R, y(t)); g.globalAlpha = 0.6; g.stroke(); g.globalAlpha = 1; g.fillText(t.toFixed(1), L - 6, y(t)); }
+    g.textAlign = "center"; g.textBaseline = "top";
+    for (let d = 0; d <= 35; d += 7) g.fillText(`d${d}`, x(Math.min(d * 24, n - 1)), H - B + 4);
+    const dumps = Object.values(D.runs[suite])[0].dump_days;
+    g.setLineDash([4, 4]); g.strokeStyle = css("--muted");
+    for (const d of dumps) { g.beginPath(); g.moveTo(x(d * 24 + 8), T); g.lineTo(x(d * 24 + 8), H - B); g.stroke(); }
+    g.setLineDash([]);
+    const order = D.controllers.filter(c => c !== focus).concat([focus]);
+    for (const name of order) {
+      const s = D.runs[suite][name][key], on = name === focus;
+      g.strokeStyle = css(`--c-${name}`); g.lineWidth = on ? 2 : 1; g.globalAlpha = on ? 1 : 0.35;
+      g.beginPath();
+      for (let i = 0; i < n; i++) { const X = x(i), Y = y(s[i]); i ? g.lineTo(X, Y) : g.moveTo(X, Y); }
+      g.stroke();
+    }
+    g.globalAlpha = 1;
+    g.strokeStyle = css("--ink"); g.lineWidth = 1; g.beginPath(); g.moveTo(x(h), T); g.lineTo(x(h), H - B); g.stroke();
+    const v = D.runs[suite][focus][key][h];
+    g.fillStyle = css(`--c-${focus}`); g.beginPath(); g.arc(x(h), y(v), 3.5, 0, 7); g.fill();
+  }
+
+  function updateCards() {
+    const sp = D.setpoints;
+    for (const name of D.controllers) {
+      const r = D.runs[suite][name], c = $(`card-${name}`);
+      const p = r.ph[h], e = r.ec[h];
+      c.querySelector(".water").setAttribute("fill", phColor(p));
+      c.querySelector(".ph").textContent = p.toFixed(2);
+      c.querySelector(".meas").textContent = `probe ${r.ph_meas[h].toFixed(2)}`;
+      const ecOut = Math.abs(e - sp.ec) > sp.ec_band;
+      c.querySelector(".ec").textContent = `EC ${e.toFixed(2)}${ecOut ? (e > sp.ec ? " ▲" : " ▼") : ""}`;
+      const [cls, txt] = status(p), pill = c.querySelector(".pill");
+      pill.className = `pill ${cls}`; pill.textContent = txt;
+      for (const [k, cls2] of [["ab", "ab"], ["acid", "acid"], ["base", "base"]]) {
+        const v = r[k][h], el = c.querySelector(`.pump.${cls2}`);
+        el.classList.toggle("on", v > 0.5);
+        el.textContent = `${k === "ab" ? "A+B" : k}${v > 0.5 ? " " + v.toFixed(0) + " mL" : ""}`;
+      }
+      const fw = r.fw[h], rad = Math.min(15, 3 + Math.sqrt(fw) * 0.95);
+      const head = c.querySelector(".head");
+      head.setAttribute("r", rad.toFixed(1));
+      head.setAttribute("fill", r.stress[h] < 0.6 ? css("--warn") : css("--c-gp_mpc"));
+      c.querySelector(".heart").setAttribute("r", (rad * 0.45).toFixed(1));
+      c.querySelector(".fw").textContent = `${fw.toFixed(0)} g / plant`;
+    }
+    const day = Math.floor(h / 24), hr = h % 24;
+    $("clock").textContent = `day ${day} · ${String(hr).padStart(2, "0")}:00`;
+    const on = hr >= 6 && hr < 22;
+    $("lights").textContent = on ? "LEDs on · 250 µmol/m²/s" : "LEDs off";
+    const dumps = Object.values(D.runs[suite])[0].dump_days;
+    $("event").hidden = !dumps.some(d => h >= d * 24 + 8 && h < d * 24 + 14);
+    $("scrub").value = h;
+  }
+
+  function table() {
+    const cols = [["ph_in_band", "pH in band", v => (v * 100).toFixed(1) + "%", 1], ["ph_rms", "pH RMS", v => v.toFixed(3), -1],
+      ["ph_severe_h", "severe h", v => v.toFixed(1), -1], ["ec_in_band", "EC in band", v => (v * 100).toFixed(1) + "%", 1],
+      ["fw_g", "fresh wt g", v => v.toFixed(0), 1], ["acid_l", "acid L", v => v.toFixed(2), -1], ["base_l", "base L", v => v.toFixed(2), -1],
+      ["stock_l", "A+B L", v => v.toFixed(2), 0], ["root_health", "roots", v => v.toFixed(2), 1]];
+    const rows = D.controllers.map(n => [n, D.runs[suite][n].metrics]);
+    let html = `<thead><tr><th>controller</th>${cols.map(c => `<th>${c[1]}</th>`).join("")}</tr></thead><tbody>`;
+    for (const [n, m] of rows) {
+      html += `<tr><td><span style="display:inline-block;width:9px;height:9px;border-radius:50%;background:var(--c-${n});margin-right:7px"></span>${n}</td>`;
+      for (const [k, , f, dir] of cols) {
+        const vals = rows.map(r => r[1][k]), best = dir > 0 ? Math.max(...vals) : Math.min(...vals), worst = dir > 0 ? Math.min(...vals) : Math.max(...vals);
+        const cls = dir && m[k] === best ? "best" : dir && m[k] === worst && best !== worst ? "worst" : "";
+        html += `<td class="${cls}">${f(m[k])}</td>`;
+      }
+      html += "</tr>";
+    }
+    $("tbl").innerHTML = html + "</tbody>";
+  }
+
+  function ticks() {
+    $("ticks").innerHTML = [0, 7, 14, 21, 28, 35].map(d => `<span>day ${d}</span>`).join("");
+  }
+
+  function draw() {
+    updateCards();
+    chart($("phc"), "ph", 4.0, 8.0, [D.setpoints.ph_lo, D.setpoints.ph_hi], [4, 5, 6, 7, 8]);
+    chart($("ecc"), "ec", 1.0, 3.5, [D.setpoints.ec - D.setpoints.ec_band, D.setpoints.ec + D.setpoints.ec_band], [1.0, 1.8, 2.5, 3.5]);
+  }
+
+  let acc = 0;  // fractional hours not yet shown
+  function tick(ts) {
+    if (!playing) return;
+    if (last !== null) {
+      acc += (ts - last) / 1000 * speed;
+      const step = Math.floor(acc);
+      if (step > 0) { acc -= step; h = Math.min(D.hours - 1, h + step); draw(); }
+      if (h >= D.hours - 1) { playing = false; $("play").textContent = "Replay"; }
+    }
+    last = ts;
+    if (playing) requestAnimationFrame(tick);
+  }
+
+  function setSuite(s) {
+    suite = s;
+    $("suite-train").setAttribute("aria-pressed", String(s === "train"));
+    $("suite-unseen").setAttribute("aria-pressed", String(s === "unseen"));
+    table(); draw();
+  }
+
+  $("play").addEventListener("click", () => {
+    if (h >= D.hours - 1) h = 0;
+    playing = !playing; last = null;
+    $("play").textContent = playing ? "Pause" : "Play";
+    if (playing) requestAnimationFrame(tick);
+  });
+  for (const v of [6, 24, 96]) $(`sp-${v}`).addEventListener("click", () => {
+    speed = v; [6, 24, 96].forEach(w => $(`sp-${w}`).setAttribute("aria-pressed", String(w === v)));
+  });
+  $("suite-train").addEventListener("click", () => setSuite("train"));
+  $("suite-unseen").addEventListener("click", () => setSuite("unseen"));
+  $("scrub").addEventListener("input", e => { h = +e.target.value; draw(); });
+  addEventListener("resize", () => D && draw());
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => D && draw());
+
+  fetch("replay.json").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); }).then(d => {
+    D = d;
+    if (!D.controllers.includes(focus)) focus = D.controllers[0];
+    $("scrub").max = D.hours - 1;
+    h = 20 * 24 + 10;  // open mid-cycle so every panel shows a working state
+    buildRack(); ticks(); setSuite("train");
+  }).catch(e => {
+    $("rack").innerHTML = `<p class="err">Could not load replay.json (${e.message}). Regenerate it with <span class="mono">uv run ponics-replay</span>.</p>`;
+  });
+})();
+</script>

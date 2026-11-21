@@ -19,6 +19,7 @@ dependencies = [
 [project.scripts]
 ponics-eval = "ponics_eval.cli:main"
 ponics-train = "ponics_learning.cli:main"
+ponics-replay = "ponics_eval.export:main"
 
 [build-system]
 requires = ["hatchling>=1.27"]
