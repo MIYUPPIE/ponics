@@ -179,9 +179,13 @@ and severe hours (pH < 5 or > 7). The 10-seed eval confirms the 0.003 row: train
 In distribution, the learned gain lets the controller run 17x tighter than the nominal
 model survives, and it gives the best tracking of any controller. Out of distribution
 (hard water, heat) the soft-water GP does not transfer: it degrades more gracefully than
-the nominal model but aggressive tuning is unsafe for both. The support box did not
-catch this, because pH, EC and age stay in range; the shift is in the dynamics. Using
-the GP variance to back off the tuning online is the next step. The eval grid carries
+the nominal model but aggressive tuning is unsafe for both. The support box does fire:
+on hard water EC leaves the training range (1.80 to 2.11) on 27% of steps at default
+tuning and 40% at aggressive tuning, and pH leaves it on 35% at aggressive tuning
+(3 seeds). But the fallback is the nominal model at the same aggressive tuning, which is
+exactly the unstable combination. A fallback has to restore conservative tuning as well;
+using the GP variance to schedule the move penalty online is the next step. (An earlier
+version of this note said the box did not fire; that was a guess, measured and corrected.) The eval grid carries
 both tunings (`mpc_tight`, `gp_mpc_tight`) so this stays measured.
 
 Fitted length scales were physically sensible: drift a depends on pH and crop age

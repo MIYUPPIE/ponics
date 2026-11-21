@@ -6,3 +6,7 @@ results/
 *.egg-info/
 dist/
 models/
+paper/figures/
+paper/dist/
+paper/build/
+paper/main.bbl

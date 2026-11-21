@@ -1,0 +1,11 @@
+cff-version: 1.2.0
+message: "If you use this simulator or its results, please cite it."
+title: "ponics: learning-based pH and EC control of a simulated recirculating hydroponic reservoir"
+authors:
+  - family-names: "Okanlawon"
+    given-names: "Olayemi Micheal"
+    affiliation: "OKHub Technology"
+version: 0.1.0
+date-released: 2026-11-21
+license: MIT
+repository-code: "https://github.com/MIYUPPIE/ponics"

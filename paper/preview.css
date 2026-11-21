@@ -1,0 +1,11 @@
+body { font-family: "DejaVu Serif", Georgia, serif; max-width: 46em; margin: 0 auto; padding: 1.5em; font-size: 11pt; line-height: 1.45; color: #111; }
+h1.title { font-size: 1.5em; text-align: center; }
+p.author { text-align: center; }
+h1, h2, h3 { font-family: "DejaVu Sans", sans-serif; }
+figure { margin: 1.2em 0; text-align: center; } figure img { max-width: 100%; }
+figcaption { font-size: 0.9em; text-align: left; }
+table { border-collapse: collapse; margin: 1em auto; font-size: 0.85em; }
+th, td { padding: 3px 8px; border-bottom: 1px solid #ccc; text-align: right; }
+td:first-child, th:first-child { text-align: left; }
+.abstract { font-size: 0.95em; margin: 1em 2em; }
+@page { size: A4; margin: 18mm; }

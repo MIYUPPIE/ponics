@@ -20,6 +20,9 @@ dependencies = [
 ponics-eval = "ponics_eval.cli:main"
 ponics-train = "ponics_learning.cli:main"
 ponics-replay = "ponics_eval.export:main"
+ponics-video = "ponics_media.render:main"
+ponics-view = "ponics_eval.view:main"
+ponics-live = "ponics_media.live:main"
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -35,6 +38,7 @@ packages = [
     "services/learning/ponics_learning",
     "services/bench/ponics_bench",
     "services/eval/ponics_eval",
+    "services/media/ponics_media",
 ]
 
 [dependency-groups]

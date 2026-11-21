@@ -1,0 +1,147 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[numbers,sort&compress]{natbib}
+\usepackage[hidelinks]{hyperref}
+\usepackage{siunitx}
+
+\input{tables/numbers.tex}
+
+\title{Learning the Buffer: Gaussian-Process MPC, PPO and Classical Control of pH and EC in a Simulated Recirculating Hydroponic Reservoir}
+\author{Okanlawon Olayemi Micheal\\
+OKHub Technology, Ibadan, Nigeria\\
+\texttt{yemokanlawon@gmail.com}}
+\date{}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Recirculating hydroponic systems hold pH and electrical conductivity (EC) with dosing pumps, usually run by threshold rules or PI loops tuned on fresh solution. The plant is easy to describe and hard to model: the pH buffer of a nutrient solution changes with pH itself, with dissolved CO$_2$, with tap-water alkalinity and with the phosphate the crop removes. We build an open simulator of a \SI{100}{L} nutrient-film-technique (NFT) lettuce reservoir with charge-balance pH and conductance-based EC chemistry, demand-driven crop uptake and probe-error models, and compare a threshold doser, PID, an offset-free linear MPC, an MPC with a structured Gaussian-process (GP) residual, and a PPO policy over 140 seeded 35-day crop cycles, including a held-out scenario with hard tap water and a hotter room. The true buffer capacity varies \nBetaRatio-fold across pH 5 to 7, which drives a near-deadbeat MPC and a PID into acid/base limit cycles unless moves are penalised. A residual of the form $a(z) + b(z)\,(u_\text{acid} - u_\text{base})$, learned from \nGpEpisodes{} logged crop cycles, reaches a held-out one-step $R^2$ of \nGpRtwo{} (pH error RMS \nGpRmseNom{} to \nGpRmseGp). At default tuning it ties the nominal MPC; its value is that it keeps the loop stable at a 17-times smaller move penalty, where it gives the best pH tracking of all controllers (RMS \nGpTTrRms) while the nominal MPC loses the crop roots. On the held-out water the learned model does not transfer: a covariate-support check sends the controller back to the nominal model, which is unstable at the aggressive tuning. PPO after \nPpoSteps{} million steps tracks pH well but under-doses nutrients. Code, evaluation, model-training scripts and videos are public.
+\end{abstract}
+
+\section{Introduction}
+
+In a recirculating NFT system one reservoir feeds every channel. The grower sets an EC target for nutrient strength and a pH window, typically 5.5 to 6.5, in which nutrients stay available \citep{sonneveld2009nutrition}. Nitrate-fed crops push pH up, tap water brings bicarbonate, transpiration concentrates the solution, and the crop removes ions in proportions that differ from the recipe, so composition drifts even at constant EC \citep{vought2024nft}. Commercial dosers hold the targets with fixed acid and nutrient shots when a reading leaves a dead band.
+
+Learning-based control for controlled-environment agriculture has mostly addressed greenhouse climate, where open simulators exist \citep{vanhenten1994thesis,vanlaatum2025greenlightgym,zhu2026lettucevissim} and safe and model-based reinforcement learning (RL) have been studied \citep{zhang2021robustmbrl,liu2026safegreenhouse}. Hydroponic work has focused on digital twins for monitoring and forecasting \citep{janssingh2020dt,mayborne2026dt}, robotic handling \citep{fernandez2025digihortirobot,bashir2026harvest}, and RL controllers evaluated in simulation against PID, often without a model-based baseline or held-out conditions \citep{dakshinamurthy2025rlpid,goldenits2024rldt}. A model-predictive controller whose prediction model is corrected by a GP residual is an established answer to a model that is right in structure and wrong in detail \citep{ostafew2016lbnmpc,kabzan2019racing,hewing2020cautious,wang2023gpfblmpc,wang2026tutorial,scampicchio2025gpmpc}. It has not, to our knowledge, been applied to nutrient-solution pH.
+
+This paper asks how much a learned residual (GP-MPC) or a model-free policy (PPO) recovers over a nominal model from one jar test, and whether either survives different water and a hotter room. The contributions are:
+\begin{enumerate}
+\item An open, tested simulator of a recirculating NFT reservoir: charge-balance pH with activity corrections, Onsager-corrected EC, CO$_2$ exchange, demand-driven uptake with a crop model, scheduled dumps, probe drift, and a full mass ledger (Section~\ref{sec:sim}).
+\item A structured GP residual for pH that separates drift from buffer gain and keeps the MPC a quadratic program, together with the two failure modes that made the unstructured version worse than no learning (Section~\ref{sec:ctrl}).
+\item A seeded comparison of five controllers and two tunings over 140 crop cycles with a held-out suite, and a tuning sweep showing that the learned residual enlarges the stable tuning region in distribution but does not transfer (Sections~\ref{sec:protocol} and \ref{sec:results}).
+\end{enumerate}
+
+\section{Simulator}\label{sec:sim}
+
+\paragraph{Chemistry.} The solution is described by strong ions K, Ca, Mg, Na, NO$_3$, SO$_4$, Cl and the weak totals $P_T$ (phosphate) and $C_T$ (inorganic carbon). Acid (HNO$_3$) and base (KOH) add only their strong ion. With $S = \sum_i z_i c_i$ over strong ions, $[\mathrm{H}^+] = h$ solves electroneutrality
+\begin{equation}
+S + h - \frac{K_w'}{h} - P_T\,\bar n_P(h) - C_T\,\bar n_C(h) = 0,
+\end{equation}
+where $\bar n_P, \bar n_C$ are the mean negative charges per phosphate and per carbonate and primed constants are conditional constants from Davies activity coefficients \citep{davies1962ion,stumm1996aquatic} at the iterated ionic strength. EC is the sum of equivalent conductances with a Debye--H\"uckel--Onsager correction. The model reproduces neutral water, the pH of \SI{1}{mM} HNO$_3$ (3.015), and the \SI{0.01}{M} KCl conductivity standard (\SI{1.412}{mS/cm} against \SI{1.413}{mS/cm}); these are gate tests. Ion pairing and precipitation are not modelled.
+
+\paragraph{Recipe and water.} Full strength is NO$_3$ 12, H$_2$PO$_4$ 1.5, SO$_4$ 1.75, K 7, Ca 3.5, Mg \SI{1.5}{mM} from two \num{100}$\times$ stocks. The tank starts at \SI{100}{L} of tap water mixed to EC 1.8 and pH 5.8. Soft tap water (training suite) has about \SI{2}{mM} alkalinity; hard water (held-out suite) about \SI{3.8}{mM} with more Ca, Mg and Na. Figure~\ref{fig:buffer} shows the buffer capacity of the training solution in equilibrium with room air: it ranges from \nBetaMin{} to \nBetaMax{}~mM per pH unit between pH 5 and 7.
+
+\paragraph{Crop.} 72 butterhead lettuce plants grow from transplant for 35 days under \SI{250}{\micro mol.m^{-2}.s^{-1}} LED light for 16 h. Growth follows light-use efficiency with interception, CO$_2$ and temperature factors and maintenance respiration; transpiration has radiation and vapour-pressure-deficit terms. Ion uptake is demand-driven (tissue content times growth, Michaelis--Menten in concentration, smoothed over 12 h so it continues at night); Na and Cl enter by mass flow with exclusion \citep{lopezmora2024uptake}. Growth is reduced by pH outside 5.5--6.5, salinity above EC 2.5 and nutrient depletion, and root health falls irreversibly while pH $<4.5$, pH $>7.8$ or EC $>4$.
+
+\paragraph{Reservoir and sensors.} Every \SI{5}{min} the model speciates the solution, applies uptake and transpiration, refills with tap water through a float valve and exchanges CO$_2$ with room air ($k_La = \SI{2}{h^{-1}}$). Controllers act every \SI{15}{min}. Half the tank is dumped and refilled on days 14 and 28 (weekly on hard water), identically for every controller. The pH probe has a drifting offset (\num{0.03} pH per $\sqrt{\text{day}}$), weekly recalibration, slope error and noise; the EC probe has gain error and a temperature-compensation mismatch. Every millimole in and out is booked in a ledger; mass balance is a gate test.
+
+\section{Controllers}\label{sec:ctrl}
+
+\paragraph{Rule and PID.} The rule doser adds \SI{30}{mL} of A+B when EC is \num{0.1} below target, \SI{10}{mL} of acid above pH 6.1 and \SI{5}{mL} of base below 5.5. PID runs PI on EC (nutrients only) and split-range PI on pH with a 0.05 dead band and anti-windup, with gains from the nominal model.
+
+\paragraph{Nominal model and MPC.} With $x = (\text{EC}, \text{pH})$ and $u = (u_{ab}, u_\text{acid}, u_\text{base})$ in mL,
+\begin{equation}
+x_{k+1} = x_k + B(V)\,u_k + d_k,\qquad B(V) = \begin{bmatrix} g_{ec} & 0 & 0\\ 0 & -g_{ph} & g_{ph}\end{bmatrix},
+\end{equation}
+where $g_{ec}$ and $g_{ph} = c/(\beta V)$ come from one jar test ($\beta = 0.30$~mM/pH) and $d$ is an offset-free drift estimate \citep{pannocchia2003offsetfree}. The MPC minimises over a \SI{4}{h} horizon a quadratic tracking cost, a linear chemical cost and a move penalty, subject to pump limits, solved with OSQP \citep{stellato2020osqp}. Two design points were forced by the plant. A near-deadbeat MPC entered an acid/base limit cycle at full pump rate when the true gain near pH 5.6 was 2.6 times nominal, so moves are penalised; the penalty acts on $(u_{ab},\,u_\text{acid} - u_\text{base})$, because separate penalties on acid and base made cancelling acid with base cheaper than cutting acid quickly. The default net-acid penalty $r_\Delta = 0.05$ keeps a linear test plant stable for gain errors from 0.5 to 4 times.
+
+\paragraph{Structured GP residual.} The pH residual of the nominal model is modelled as
+\begin{equation}
+\Delta\text{pH}_\text{res}(z, n) = a(z) + b(z)\,n,\qquad n = u_\text{acid} - u_\text{base},
+\end{equation}
+with $z$ = (pH, EC, time of day, lights, crop age), as one exact GP with kernel $k_a(z,z') + n n' k_b(z,z')$ and ARD squared-exponential components \citep{rasmussen2006gpml}. The posterior means of $a$ (drift) and $b$ (gain correction) are linear in the dose, so GP-MPC uses step-wise $B_k = B + b(z_k)\,[0,0,0;\,0,1,-1]$ and offsets $a(z_k)$ along the previous plan, and remains a QP. Hyperparameters maximise the marginal likelihood with its analytic gradient. Outside the 1st--99th percentile box of training pH, EC and age the residual is dropped, and the corrected gain is clamped to 0.25--8 times nominal. Data come from \nGpEpisodes{} training-suite cycles logged with the MPC plus random dither and random holds; \nGpPoints{} points are used.
+
+Two earlier versions failed instructively. An unstructured GP on $(z, u)$ reached a held-out $R^2$ of 0.92 yet made control worse: its slope in the dose was up to five times wrong, because in closed-loop data acid is dosed exactly when pH is rising. Without random holds in the logged data the structured model attributed the fast pH rebound after base dosing to drift, learned a $+1.3$~pH per step drift at pH 4.6, and drove the tank further down.
+
+\paragraph{PPO.} A PPO policy \citep{schulman2017ppo,raffin2021sb3} (MLP 64$\times$64) observes the same readings, trends, clock, crop age and last action as the MPC and outputs an A+B dose and one signed acid/base axis, so it cannot dose both. Its reward is the negative MPC stage cost on the true state with a penalty for pH outside 5--7. It is trained for \nPpoSteps{} million steps on training-suite seeds disjoint from the evaluation seeds. A first version mapped actions to the full pump range and, after 3 million steps, alternated acid and base; restricting the range to \SI{50}{mL} A+B and \SI{15}{mL} acid or base fixed this.
+
+\section{Evaluation protocol}\label{sec:protocol}
+
+A scenario is fixed by suite and seed: tap water, room climate with $\pm\SI{1}{\celsius}$ and $\pm5\%$ light jitter, cultivar jitter ($\pm10\%$ light-use efficiency, leaf area and tissue content) and all probe noise. Seeds 0--9 are evaluated on both suites; learning code refuses evaluation seeds and the held-out suite. Metrics are computed on the true state: share of time with pH in 5.5--6.5, pH RMS about 5.8, hours with pH $<5$ or $>7$, EC within $\pm0.2$ of 1.8, fresh weight at day 35, acid and base used, and root health. Two extra variants run both MPCs at the aggressive penalty $r_\Delta = 0.003$. All numbers in this paper are regenerated by the released evaluation scripts.
+
+\section{Results}\label{sec:results}
+
+\begin{table}[t]
+\centering
+\caption{Training suite (soft water, 22/18\,\textdegree C), mean over 10 seeds ($\pm$ s.d.). Band: share of time in the pH or EC band; severe: hours with pH $<5$ or $>7$; FW: fresh weight per plant at day 35.}\label{tab:train}
+\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+controller & pH band \% & pH RMS & severe h & EC band \% & FW g & acid L & base L & roots\\
+\midrule
+\input{tables/results_train.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[t]
+\centering
+\caption{Held-out suite (hard water, 28/22\,\textdegree C, low humidity), mean over 10 seeds. No learned controller saw this suite.}\label{tab:unseen}
+\small
+\begin{tabular}{lrrrrrrrr}
+\toprule
+controller & pH band \% & pH RMS & severe h & EC band \% & FW g & acid L & base L & roots\\
+\midrule
+\input{tables/results_unseen.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Default tuning.} Tables~\ref{tab:train} and \ref{tab:unseen} summarise the comparison. On soft water every controller at default tuning keeps pH in band more than 99\% of the time; the MPCs reduce pH RMS from \nRuleTrRms{} (rule) and \nPidTrRms{} (PID) to \nMpcTrRms{} (MPC) and \nGpTrRms{} (GP-MPC). On hard water the differences are large: PID logs \nPidUnSevere{} severe hours and loses roots (\nPidUnRoot{}), the rule doser \nRuleUnSevere{} hours, while MPC and GP-MPC log \nMpcUnSevere{} and \nGpUnSevere{} hours, mostly right after the weekly refills with alkaline water. At this tuning the learned residual mainly trims base use (\nGpTrBase{} against \nMpcTrBase{}~L on soft water).
+
+\paragraph{Learned gain enables aggressive tuning.} Figure~\ref{fig:sweep} sweeps the net-acid move penalty. With the nominal model, pH RMS on soft water rises from \nSwMpcTrRmsD{} at $r_\Delta = 0.05$ to \nSwMpcTrRmsA{} at 0.003, with \nSwMpcTrSevA{} severe hours: the loop oscillates through the weak-buffer region (Figure~\ref{fig:traces}, top). GP-MPC stays stable across the sweep and reaches its lowest error, \nSwGpTrRmsA{}, at 0.003. In the 10-seed evaluation the aggressive GP-MPC has the best pH tracking of all controllers (RMS \nGpTTrRms, \nGpTTrBand\% in band, no severe hours), while the aggressive nominal MPC keeps only \nMpcTTrRoot{} root health. Figure~\ref{fig:buffer} shows the mechanism: below pH 6 the true per-mL gain of fresh solution is up to five times the jar-test value, and the learned correction raises the model's gain there, by about a factor of two late in the cycle and only slightly early on. Recovering part of the gap is enough to keep the aggressive loop stable.
+
+\paragraph{No transfer.} On hard water and heat the aggressive variants fail for both models (GP-MPC \nGpTUnSevere{} severe hours, MPC \nMpcTUnSevere{}). The support check does detect part of the shift: on hard water EC leaves the training range (1.80--2.11) on 27\% of steps at default tuning and 40\% at aggressive tuning as salts accumulate, and pH leaves it on 35\% of steps at aggressive tuning (3 seeds). But the fallback is the nominal model at the same aggressive tuning, which is the unstable combination, and inside the box the soft-water buffer and drift are wrong for hard water. The learned residual buys a larger stable region where it was trained, not robustness to new water; a fallback must also restore conservative tuning.
+
+\paragraph{PPO.} PPO keeps pH in band \nPpoTrBand\% of the time on soft water and \nPpoUnBand\% on hard water with \nPpoUnSevere{} severe hours, better than PID and the rule doser there, without being told about the buffer. It under-doses nutrients on soft water (EC low \nPpoTrEcLow\% of the time) and gives the lowest training-suite fresh weight (\nPpoTrFw{}~g against \nMpcTrFw{}~g for MPC), because the reward weighs EC and pH only through the tracking cost and growth is not rewarded directly.
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/buffer.pdf}
+\caption{Left: buffer capacity of the training solution in equilibrium with \SI{800}{ppm} CO$_2$ against the jar-test value used by the nominal model. Right: pH change per mL of acid for fresh solution (true), the nominal model, and the nominal model plus the learned correction $b(z)$ at two crop ages, shown only inside the GP's training support. The solution at day 9 and day 26 differs from fresh solution, so the curves bound rather than match each other.}\label{fig:buffer}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/traces.pdf}
+\caption{True pH over the 35-day cycle, seed 0. Top: soft water, nominal MPC at default and aggressive tuning, and aggressive GP-MPC. Bottom: hard water, PID, rule, PPO and MPC. Shaded: target band; dashed: scheduled half-tank dumps.}\label{fig:traces}
+\end{figure}
+
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figures/sweep.pdf}
+\caption{Move-penalty sweep, 10 seeds per point (mean $\pm$ s.d.). Solid: training suite; dashed: held-out suite.}\label{fig:sweep}
+\end{figure}
+
+\section{Discussion}
+
+\paragraph{What the buffer does to control.} The nominal model's gain error is not a nuisance parameter here: it spans a factor of about \nBetaRatio{} across the operating range and grows late in the cycle when the crop removes phosphate. Robustness of the classical loops comes entirely from detuning, and the same detuning limits what they can achieve. The value of a learned residual in this plant is to make the gain known, which is what permits tighter control.
+
+\paragraph{How the learning failed first.} Both failure modes of the residual came from closed-loop data, not from model capacity. Structuring the residual to be linear in the dose and adding random holds to the logging policy were each necessary. A held-out one-step $R^2$ was not a reliable predictor of closed-loop value.
+
+\paragraph{Limitations.} All results are in simulation. The chemistry omits ion pairing and precipitation, the crop model is calibrated to typical ranges rather than a measured cultivar, and EC is the only nutrient signal, so accumulation of Ca, Mg, SO$_4$ and Na cannot be controlled and is handled by scheduled dumps. The GP variance is not used; chance constraints or online adaptation of the residual are the natural next step, and the held-out failure shows they are needed. PPO was trained with one reward and one architecture. A hardware validation on a real reservoir with an ESP32 doser and laboratory-grade probes is planned.
+
+\section{Conclusion}
+
+In a simulated recirculating NFT reservoir, an offset-free MPC with move suppression already outperforms threshold dosing and PID where the water is hard. A structured GP residual for pH, $a(z) + b(z)\,(u_\text{acid} - u_\text{base})$, learned from a few logged cycles, ties the nominal MPC at default tuning but keeps it stable at a 17-times more aggressive tuning, giving the best pH tracking of all tested controllers on the water it was trained on. It does not transfer to different water and a hotter room; a covariate-support fallback to the nominal model does not help, because the nominal model is unstable at the aggressive tuning. Learned dosing models for hydroponics should therefore be judged on held-out water and climate, and should carry uncertainty that responds to the dynamics, not only to the inputs.
+
+\paragraph{Code and data availability.} Simulator, controllers, trained-model scripts, evaluation and videos: \url{https://github.com/MIYUPPIE/ponics}. \texttt{scripts/eval.sh} regenerates every table, and \texttt{paper/make\_figures.py} every figure and number in this paper.
+
+\bibliographystyle{unsrtnat}
+\bibliography{refs}
+
+\end{document}

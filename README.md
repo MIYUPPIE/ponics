@@ -4,7 +4,7 @@ Nutrient-solution control for a recirculating NFT lettuce reservoir. One simulat
 scenario set and one metric, used to compare a grower's rule doser, PID, a nominal MPC,
 a GP-MPC with a learned pH residual, and PPO.
 
-**Question:** the pH buffer of a nutrient solution varies 13x across the operating range
+**Question:** the pH buffer of a nutrient solution varies more than 10x across the operating range
 and drifts as the crop removes phosphate and the tap water brings alkalinity. A model
 from one jar test is right in structure and wrong in detail. How much does a learned
 residual (GP-MPC) or a model-free policy (PPO) recover, at what data cost, and does it
@@ -57,8 +57,9 @@ Reading it:
   (0.03 vs 0.08 L, 0.08 vs 0.16 L). Both beat PID and the rule doser clearly on hard water.
 * The learned pH residual makes aggressive tuning safe in distribution: `gp_mpc_tight` is
   the best controller on train, while the same tuning on the nominal model destroys the roots.
-  Out of distribution that tuning fails for both. The GP gives a bigger stable region,
-  not a transferable one.
+  Out of distribution that tuning fails for both: the GP's support check sends GP-MPC back
+  to the nominal model, which is unstable at that tuning. The GP gives a bigger stable
+  region, not a transferable one.
 * PPO (6 M steps) tracks pH nearly as well as PID and stays reasonable on hard water
   (12.5 severe hours vs 56.6 for PID), but under-doses nutrients on train (EC low 7.8% of the
   time, lowest fresh weight). PPO v1 (full pump range, 3 M steps) alternated acid and base;
@@ -82,13 +83,41 @@ Replay viewer: `uv run ponics-replay` records seed-0 episodes and writes
 4. **The GP's value is safe aggressive tuning.** In distribution, GP-MPC runs stable at a
    17x smaller move penalty, where the nominal MPC kills the roots, and tracks best of all
    (pH RMS 0.072 vs 0.081, 10 seeds).
-   On hard water and heat the soft-water GP does not transfer; the support box does not
-   detect the shift because it is in the dynamics, not the inputs.
+   On hard water and heat it does not transfer. The support check does fire (EC leaves the
+   training range on 27 to 40% of steps as hard-water salts build up), but falling back to
+   the nominal model is not enough, because the aggressive tuning is unstable for the nominal
+   model too. A fallback must also restore conservative tuning.
 5. **Composition drift is real and uncontrollable with EC alone.** Holding EC lets Ca, Mg,
    SO4 and Na build up, phosphate runs out late in the cycle, the buffer collapses, and
    EC cannot be brought down without dumping. Ion-specific sensing is the next research angle.
 
 Details, equations, parameters and every dead end: `docs/DESIGN.md`.
+
+## Run the simulation yourself
+
+Everything runs locally; no account or internet connection is needed after `uv sync`.
+
+```bash
+uv sync                                          # once (Python 3.12, CPU-only torch)
+uv run ponics-train gp                           # ~80 s, needed for gp_mpc*
+uv run ponics-train ppo                          # ~70 min, needed for ppo (skip it to run the others)
+uv run ponics-live --controller gp_mpc           # live window: tank, probes, pumps, pH/EC traces
+uv run ponics-live --controller pid --suite unseen --seed 3 --speed 48
+uv run ponics-view                               # side-by-side replay of every controller in your browser
+uv run ponics-video --all                        # re-render the videos into results/videos/
+```
+
+`ponics-live` takes `--controller` (rule, pid, mpc, gp_mpc, mpc_tight, gp_mpc_tight, ppo),
+`--suite` (train, unseen), `--seed`, `--days` and `--speed` (simulated hours per second).
+
+## Videos and paper
+
+* Videos (1920x1080 and 1080x1080, one per controller plus an overview) are attached to the
+  GitHub release `v0.1.0`; `ponics-video --all` regenerates them bit for bit from `ponics-replay`.
+* Paper: `paper/main.tex` (arXiv source). `paper/build.sh` regenerates every figure, table and
+  quoted number from the recorded data (`paper/tables/numbers.tex` is generated, never typed),
+  writes `paper/dist/ponics_arxiv.tar.gz` (upload this to arXiv), a .docx and a PDF preview.
+  The tuning sweep behind Figure 3 is `uv run python paper/sweep.py`.
 
 ## Layout
 
@@ -100,7 +129,9 @@ services/sensors/             pH and EC probe models (drift, recalibration, temp
 services/control/             rule, PID, nominal model, offset-free MPC (OSQP), GP-MPC
 services/learning/            residual data logging, structured GP, PPO env + training, ponics-train
 services/bench/               scenarios (suites, seeds), closed-loop episode runner
-services/eval/                metrics, registry, report, ponics-eval
+services/eval/                metrics, registry, report, ponics-eval, ponics-replay, ponics-view
+services/media/               ponics-video (FFmpeg renders), ponics-live (desktop window)
+paper/                        arXiv source, figure/number generators, sweep, build script
 evals/                        baseline.json (recorded run), requirements.json (hard limits)
 scripts/                      gate.sh, eval.sh
 docs/                         DESIGN.md, HARDWARE.md
