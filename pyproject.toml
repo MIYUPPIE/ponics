@@ -1,0 +1,53 @@
+[project]
+name = "ponics"
+version = "0.1.0"
+description = "Nutrient-solution control for a recirculating NFT lettuce reservoir: rule, PID, MPC, GP-MPC and PPO compared on one simulator and one metric."
+authors = [{ name = "Okanlawon Olayemi Micheal", email = "yemokanlawon@gmail.com" }]
+requires-python = ">=3.12"
+dependencies = [
+    "gymnasium>=1.0",
+    "matplotlib>=3.9",
+    "numpy>=2.0",
+    "osqp>=1.0",
+    "scikit-learn>=1.5",
+    "scipy>=1.14",
+    "stable-baselines3>=2.4",
+    "threadpoolctl>=3.5",
+    "torch>=2.5",
+]
+
+[project.scripts]
+ponics-eval = "ponics_eval.cli:main"
+ponics-train = "ponics_learning.cli:main"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = [
+    "contracts/ponics_contracts",
+    "services/chem/ponics_chem",
+    "services/sim/ponics_sim",
+    "services/sensors/ponics_sensors",
+    "services/control/ponics_control",
+    "services/learning/ponics_learning",
+    "services/bench/ponics_bench",
+    "services/eval/ponics_eval",
+]
+
+[dependency-groups]
+dev = ["pre-commit>=4.0", "pytest>=8.3"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["contracts/tests", "services"]
+markers = ["eval: slow seeded evaluation runs (not part of the gate)"]
+addopts = "-m 'not eval' -q --import-mode=importlib"

@@ -1,0 +1,9 @@
+repos:
+  - repo: local
+    hooks:
+      - id: gate-tests
+        name: gate tests (scripts/gate.sh)
+        entry: scripts/gate.sh
+        language: system
+        pass_filenames: false
+        always_run: true
